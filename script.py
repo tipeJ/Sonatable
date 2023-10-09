@@ -93,6 +93,11 @@ BUTTONS_7_CHAR_UUID = bluetooth.UUID("f7d9c9dc-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 _GENERIC = bluetooth.UUID(0x1848)
 _BLE_APPEARANCE_GENERIC_REMOTE_CONTROL = const(384)
 
+_NOTIFY_ENABLE = const(1)
+_INDICATE_ENABLE = const(2)
+
+ble = bluetooth.BLE()
+
 # How frequently to send advertising beacons.
 _ADV_INTERVAL_MS = 250_000
 
@@ -117,13 +122,13 @@ mode_characteristic = aioble.Characteristic(
 neopixel_service = aioble.Service(NEOPIXEL_SERVICE_UUID)
 neopixel_setting_characteristic = aioble.Characteristic(neopixel_service, NEOPIXEL_COLOR_CHAR_UUID, write=True, read=True)
 buttons_service = aioble.Service(BUTTONS_SERVICE_UUID)
-buttons_1_characteristic = aioble.Characteristic(buttons_service, BUTTONS_1_CHAR_UUID, notify=True, read=True, write=True)
-buttons_2_characteristic = aioble.Characteristic(buttons_service, BUTTONS_2_CHAR_UUID, notify=True, read=True, write=True)
-buttons_3_characteristic = aioble.Characteristic(buttons_service, BUTTONS_3_CHAR_UUID, notify=True, read=True, write=True)
-buttons_4_characteristic = aioble.Characteristic(buttons_service, BUTTONS_4_CHAR_UUID, notify=True, read=True, write=True)
-buttons_5_characteristic = aioble.Characteristic(buttons_service, BUTTONS_5_CHAR_UUID, notify=True, read=True, write=True)
-buttons_6_characteristic = aioble.Characteristic(buttons_service, BUTTONS_6_CHAR_UUID, notify=True, read=True, write=True)
-buttons_7_characteristic = aioble.Characteristic(buttons_service, BUTTONS_7_CHAR_UUID, notify=True, read=True, write=True)
+buttons_1_characteristic = aioble.Characteristic(buttons_service, BUTTONS_1_CHAR_UUID, notify=True)
+buttons_2_characteristic = aioble.Characteristic(buttons_service, BUTTONS_2_CHAR_UUID, notify=True)
+buttons_3_characteristic = aioble.Characteristic(buttons_service, BUTTONS_3_CHAR_UUID, notify=True)
+buttons_4_characteristic = aioble.Characteristic(buttons_service, BUTTONS_4_CHAR_UUID, notify=True)
+buttons_5_characteristic = aioble.Characteristic(buttons_service, BUTTONS_5_CHAR_UUID, notify=True)
+buttons_6_characteristic = aioble.Characteristic(buttons_service, BUTTONS_6_CHAR_UUID, notify=True)
+buttons_7_characteristic = aioble.Characteristic(buttons_service, BUTTONS_7_CHAR_UUID, notify=True)
 button_characteristics = [buttons_1_characteristic, buttons_2_characteristic, buttons_3_characteristic, buttons_4_characteristic, buttons_5_characteristic, buttons_6_characteristic, buttons_7_characteristic]
 
 # Write a 256 byte buffer to the characteristic.
@@ -191,14 +196,11 @@ def button_clicked(index):
     # Notify the characteristic, with current timestamp
     current_time = machine.RTC().datetime()
     # Take the second to last value, which is the seconds
-    print(current_time)
     current_time = current_time[6]
-    print(current_time)
     # Encode the time to bytes
     current_time = current_time.to_bytes(4, "little")
+    print(bt_connection)
     characteristic.notify(bt_connection, str(current_time))
-    characteristic.write(str(current_time))
-    characteristic.read()
     
     return
     if (index == 1):
@@ -233,6 +235,9 @@ async def peripheral_task():
             # Override BLE MTU
             aioble.config(mtu=256)
             bt_connection = connection
+            # Print out all the descriptors for the button characteristics
+            for characteristic in button_characteristics:
+                print(characteristic)
             connection.exchange_mtu(256)
             is_connected = True
             loop = asyncio.get_event_loop()
