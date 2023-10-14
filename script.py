@@ -1,5 +1,4 @@
 import sys
-from neopixel import Neopixel
 sys.path.append("")
 from micropython import const
 import micropython as mipy
@@ -10,72 +9,10 @@ import random
 import struct
 import json
 import machine
-from machine import Pin, Timer
+from machine import Pin
 from debounce import DebouncedSwitch
+from patterns import NeopixelSingleColorConfiguration, NeopixelGradientConfiguration
 
-class NeopixelConfigurationInterface:
-    def __init__(self):
-        self.PIN = Pin(4)
-        self.NUM_PIXELS = 0
-        self.NP = NeoPixel(self.NUM_PIXELS, 0, 0, "RGBW")
-
-    @staticmethod
-    def from_json(json):
-        pass
-
-    def setup(self):
-        pass
-
-    async def loop(self):
-        pass
-
-class NeopixelSingleColorConfiguration(NeopixelConfigurationInterface):
-    def __init__(self, color):
-        self.color = color
-        super().__init__()
-
-    @staticmethod
-    def from_json(json):
-        return NeopixelSingleColorConfiguration(
-            (json["color"][0], json["color"][1], json["color"][2], json["color"][3])
-        )
-
-    def setup(self):
-        self.NP.fill(self.color)
-        self.NP.write()
-
-class NeopixelGradientConfiguration(NeopixelConfigurationInterface):
-    def __init__(self, color1, color2, steps=50, wait_ms=50):
-        self.color1 = color1
-        self.color2 = color2
-        self.steps = steps
-        self.wait_ms = wait_ms
-        super().__init__()
-
-    @staticmethod
-    def from_json(json):
-        return NeopixelGradientConfiguration(
-            neopixel.Color(json["color1"][0], json["color1"][1], json["color1"][2]),
-            neopixel.Color(json["color2"][0], json["color2"][1], json["color2"][2]),
-            json["steps"],
-            json["wait_ms"],
-        )
-
-    def setup(self):
-        self.NP.fill(self.color1)
-        self.NP.write()
-
-    async def loop(self):
-        # Color shift the fill to the other color, one step at a time. After the last step, start over.
-        while True:
-            for i in range(self.steps):
-                self.NP.fill(self.color1.lerp(self.color2, i / self.steps))
-                self.NP.write()
-                await asyncio.sleep_ms(self.wait_ms)
-            for i in range(self.steps):
-                self.NP.fill(self.color2.lerp(self.color1, i / self.steps))
-                self.NP.write()
-                await asyncio.sleep_ms(self.wait_ms)
 
 _MODE_SERVICE_UUID = bluetooth.UUID('f7d9c9d1-9c3d-4c9e-9c8d-9c8d9c8d9c8d')
 _MODE_CHAR_UUID = bluetooth.UUID('f7d9c9d2-9c3d-4c9e-9c8d-9c8d9c8d9c8d')
@@ -106,7 +43,7 @@ KUUNAPPI_MODE_SOUNDBOARD = const(0)
 KUUNAPPI_MODE_LIGHT = const(1)
 
 current_kuunappi_mode = KUUNAPPI_MODE_SOUNDBOARD
-current_neopixel_mode = None
+current_neopixel_pattern = None
 current_neopixel_identifier = None
 led = Pin(14, Pin.OUT)
 led2 = Pin(15, Pin.OUT)
@@ -136,12 +73,13 @@ sample = bytearray(256)
 for i in range(256):
     sample[i] = i
 neopixel_setting_characteristic.write(sample)
+neopixel_loop_task = None # asyncio task
     
 aioble.register_services(mode_service, neopixel_service, buttons_service)
 
 # ! Neopixel stuff
 async def neopixel_task(connection):
-    global current_neopixel_mode, is_connected, current_neopixel_identifier
+    global current_neopixel_pattern, is_connected, current_neopixel_identifier, neopixel_loop_task
     if not is_connected:
         await asyncio.sleep_ms(1000)
         return
@@ -158,11 +96,26 @@ async def neopixel_task(connection):
         # Parse the class from the json parameter "mode"
         light_class = new_mode["mode"]
         if (light_class == "solid"):
-            current_neopixel_mode = NeopixelSingleColorConfiguration.from_json(new_mode)
+            new_neopixel_pattern = NeopixelSingleColorConfiguration.from_json(new_mode)
         else:
-            current_neopixel_mode = NeopixelGradientConfiguration.from_json(new_mode)
+            new_neopixel_pattern = NeopixelGradientConfiguration.from_json(new_mode)
         print("Mode changed to", new_mode)
+        # If neoixel loop task is running, cancel it.
+        if neopixel_loop_task is not None:
+            neopixel_loop_task.cancel()
+            if current_neopixel_pattern is not None:
+                # Activate the final state of the neopixel mode
+                current_neopixel_pattern.terminate()
+        # Start the new task in the event loop
+        current_neopixel_pattern = new_neopixel_pattern
+        loop = asyncio.get_event_loop()
+        neopixel_loop_task = loop.create_task(neopixel_loop())
 
+async def neopixel_loop():
+    global current_neopixel_pattern
+    if current_neopixel_pattern is not None:
+        await current_neopixel_pattern.setup()
+        await current_neopixel_pattern.loop()
 
 # ! Moon Mode stuff
 # Encode the mode message from int to bytes
@@ -175,7 +128,7 @@ def decode_mode(data):
 
 # Read the ch
 async def mode_task(connection):
-    global current_kuunappi_mode, is_connected, current_neopixel_identifier, current_neopixel_mode
+    global current_kuunappi_mode, is_connected, current_neopixel_identifier, current_neopixel_pattern
     if not is_connected:
         await asyncio.sleep_ms(1000)
         return
