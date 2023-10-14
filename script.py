@@ -11,7 +11,7 @@ import json
 import machine
 from machine import Pin
 from debounce import DebouncedSwitch
-from patterns import NeopixelSingleColorConfiguration, NeopixelGradientConfiguration
+from patterns import NeopixelConfigurationInterface, NeopixelSingleColorConfiguration, NeopixelGradientPulseConfiguration
 
 
 _MODE_SERVICE_UUID = bluetooth.UUID('f7d9c9d1-9c3d-4c9e-9c8d-9c8d9c8d9c8d')
@@ -77,6 +77,13 @@ neopixel_loop_task = None # asyncio task
     
 aioble.register_services(mode_service, neopixel_service, buttons_service)
 
+def get_neopixel_config_from_json(json) -> NeopixelConfigurationInterface:
+    light_class = json["mode"]
+    if (light_class == "solid"):
+        return NeopixelSingleColorConfiguration.from_json(json)
+    else:
+        return NeopixelGradientPulseConfiguration.from_json(json)
+
 # ! Neopixel stuff
 async def neopixel_task(connection):
     global current_neopixel_pattern, is_connected, current_neopixel_identifier, neopixel_loop_task
@@ -95,10 +102,7 @@ async def neopixel_task(connection):
         new_mode = json.loads(new_mode)
         # Parse the class from the json parameter "mode"
         light_class = new_mode["mode"]
-        if (light_class == "solid"):
-            new_neopixel_pattern = NeopixelSingleColorConfiguration.from_json(new_mode)
-        else:
-            new_neopixel_pattern = NeopixelGradientConfiguration.from_json(new_mode)
+        new_neopixel_pattern = get_neopixel_config_from_json(new_mode)
         print("Mode changed to", new_mode)
         # If neoixel loop task is running, cancel it.
         if neopixel_loop_task is not None:

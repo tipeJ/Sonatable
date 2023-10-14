@@ -1,4 +1,5 @@
 import math
+import random
 
 def hsi2rgbw(H, S, I):
     rgbw = [0, 0, 0, 0]
@@ -74,6 +75,20 @@ def RGBToRGBW(r, g, b, blueCorrectionEnabled=False):
 
     # Return the output values.
     return (rOut, gOut, bOut, wOut)
+
+def random_rgb():
+    return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
+# Takes value of hue between 0 and 255. Transition r -> g -> b -> r.
+def wheel(wheel_pos):
+    if wheel_pos < 85:
+        return (wheel_pos * 3, 255 - wheel_pos * 3, 0)
+    elif wheel_pos < 170:
+        wheel_pos -= 85
+        return (255 - wheel_pos * 3, 0, wheel_pos * 3)
+    else:
+        wheel_pos -= 170
+        return (0, wheel_pos * 3, 255 - wheel_pos * 3)
 
 def lerp(color1, color2, t):
     return (color1[0] + (color2[0] - color1[0]) * t, color1[1] + (color2[1] - color1[1]) * t, color1[2] + (color2[2] - color1[2]) * t)
