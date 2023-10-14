@@ -11,7 +11,7 @@ import json
 import machine
 from machine import Pin
 from debounce import DebouncedSwitch
-from patterns import NeopixelConfigurationInterface, NeopixelSingleColorConfiguration, NeopixelGradientPulseConfiguration
+from patterns import NeopixelConfigurationInterface, NeopixelSingleColorConfiguration, NeopixelGradientPulseConfiguration, Rainbow
 
 
 _MODE_SERVICE_UUID = bluetooth.UUID('f7d9c9d1-9c3d-4c9e-9c8d-9c8d9c8d9c8d')
@@ -81,6 +81,8 @@ def get_neopixel_config_from_json(json) -> NeopixelConfigurationInterface:
     light_class = json["mode"]
     if (light_class == "solid"):
         return NeopixelSingleColorConfiguration.from_json(json)
+    elif (light_class == 'rainbow'):
+        return Rainbow.from_json(json)
     else:
         return NeopixelGradientPulseConfiguration.from_json(json)
 
@@ -109,17 +111,12 @@ async def neopixel_task(connection):
             neopixel_loop_task.cancel()
             if current_neopixel_pattern is not None:
                 # Activate the final state of the neopixel mode
-                current_neopixel_pattern.terminate()
+                await current_neopixel_pattern.terminate()
         # Start the new task in the event loop
         current_neopixel_pattern = new_neopixel_pattern
-        loop = asyncio.get_event_loop()
-        neopixel_loop_task = loop.create_task(neopixel_loop())
-
-async def neopixel_loop():
-    global current_neopixel_pattern
-    if current_neopixel_pattern is not None:
         await current_neopixel_pattern.setup()
-        await current_neopixel_pattern.loop()
+        loop = asyncio.get_event_loop()
+        neopixel_loop_task = loop.create_task(current_neopixel_pattern.loop())
 
 # ! Moon Mode stuff
 # Encode the mode message from int to bytes

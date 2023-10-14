@@ -40,6 +40,57 @@ def hsi2rgbw(H, S, I):
 
     return rgbw
 
+def rgb2hsi(r, g, b):
+    r = r / 255
+    g = g / 255
+    b = b / 255
+
+    h = 0
+    s = 0
+    i = 0
+
+    min_val = min(r, g, b)
+    max_val = max(r, g, b)
+    delta = max_val - min_val
+
+    i = (min_val + max_val) / 2
+
+    if delta == 0:
+        h = 0
+        s = 0
+    else:
+        if i < 0.5:
+            s = delta / (min_val + max_val)
+        else:
+            s = delta / (2 - min_val - max_val)
+
+        delta_r = (((max_val - r) / 6) + (delta / 2)) / delta
+        delta_g = (((max_val - g) / 6) + (delta / 2)) / delta
+        delta_b = (((max_val - b) / 6) + (delta / 2)) / delta
+
+        if r == max_val:
+            h = delta_b - delta_g
+        elif g == max_val:
+            h = (1 / 3) + delta_r - delta_b
+        elif b == max_val:
+            h = (2 / 3) + delta_g - delta_r
+
+        if h < 0:
+            h += 1
+        if h > 1:
+            h -= 1
+
+    return (h * 360, s, i)
+
+def RGB2RGBW(r, g, b):
+    # First to HSI
+    hsi = rgb2hsi(r, g, b)
+    # Then to RGBW
+    rgbw = hsi2rgbw(hsi[0], hsi[1], hsi[2])
+    # The strip is GRBW, so swap the values.
+    return (rgbw[1], rgbw[0], rgbw[2], rgbw[3])
+    return (rgbw[0], rgbw[1], rgbw[2], rgbw[3])
+
 def RGBToRGBW(r, g, b, blueCorrectionEnabled=False):
     # Source: https://github.com/BertanT/Arduino-RGBWConverter/blob/main/src/RGBWConverter.cpp
     # Converted to Python by me :)
