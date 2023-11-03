@@ -167,9 +167,18 @@ def controls_task():
 
     brightness_change = controls_brightness_change_characteristic.read()
     if brightness_change != b'\x00' and brightness_change != b'':
-        print("Brightness changed! Value:", brightness_change)
         # Reset the brightness change state to 0 again
         controls_brightness_change_characteristic.write(b'\x00')
+        #Decode the brightness change value string
+        brightness_change = brightness_change.decode("utf-8")
+        if (brightness_change == "+1"):
+            print("Brightness up")
+        elif (brightness_change == "-1"):
+            print("Brightness down")
+        elif (brightness_change == "max"):
+            print("Brightness max")
+        elif (brightness_change == "min"):
+            print("Brightness min")
 
     new_mode = mode_characteristic.read()
     new_mode = decode_mode(new_mode)
