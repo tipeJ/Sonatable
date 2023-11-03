@@ -14,8 +14,6 @@ from debounce import DebouncedSwitch
 from patterns import NeopixelConfigurationInterface, NeopixelSingleColorConfiguration, NeopixelGradientPulseConfiguration, Rainbow
 
 
-_MODE_SERVICE_UUID = bluetooth.UUID('f7d9c9d1-9c3d-4c9e-9c8d-9c8d9c8d9c8d')
-_MODE_CHAR_UUID = bluetooth.UUID('f7d9c9d2-9c3d-4c9e-9c8d-9c8d9c8d9c8d')
 NEOPIXEL_SERVICE_UUID = bluetooth.UUID("f7d9c9d3-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 NEOPIXEL_COLOR_CHAR_UUID = bluetooth.UUID("f7d9c9d4-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 BUTTONS_SERVICE_UUID = bluetooth.UUID("f7d9c9d5-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
@@ -26,6 +24,10 @@ BUTTONS_4_CHAR_UUID = bluetooth.UUID("f7d9c9d9-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 BUTTONS_5_CHAR_UUID = bluetooth.UUID("f7d9c9da-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 BUTTONS_6_CHAR_UUID = bluetooth.UUID("f7d9c9db-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 BUTTONS_7_CHAR_UUID = bluetooth.UUID("f7d9c9dc-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
+CONTROLS_SERVICE_UUID = bluetooth.UUID("f7d9c9dd-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
+CONTROLS_MODE_CHAR_UUID = bluetooth.UUID('f7d9c9d2-9c3d-4c9e-9c8d-9c8d9c8d9c8d')
+CONTROLS_POWERBUTTON_CHAR_UUID = bluetooth.UUID("f7d9c9de-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
+CONTROLS_BRIGHTNESS_CHANGE_CHAR = bluetooth.UUID("f7d9c9df-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 
 _GENERIC = bluetooth.UUID(0x1848)
 _BLE_APPEARANCE_GENERIC_REMOTE_CONTROL = const(384)
@@ -53,9 +55,11 @@ bt_connection = None
 
 
 # Register service
-mode_service = aioble.Service(_MODE_SERVICE_UUID)
+controls_service = aioble.Service(CONTROLS_SERVICE_UUID)
+controls_powerbutton_characteristic = aioble.Characteristic(controls_service, CONTROLS_POWERBUTTON_CHAR_UUID, write=True, read=True)
+controls_brightness_change_characteristic = aioble.Characteristic(controls_service, CONTROLS_BRIGHTNESS_CHANGE_CHAR, write=True, read=True)
 mode_characteristic = aioble.Characteristic(
-    mode_service, _MODE_CHAR_UUID, write=True, read=True, notify=True)
+    controls_service, CONTROLS_MODE_CHAR_UUID, write=True, read=True, notify=True)
 neopixel_service = aioble.Service(NEOPIXEL_SERVICE_UUID)
 neopixel_setting_characteristic = aioble.Characteristic(neopixel_service, NEOPIXEL_COLOR_CHAR_UUID, write=True, read=True)
 buttons_service = aioble.Service(BUTTONS_SERVICE_UUID)
@@ -75,7 +79,7 @@ for i in range(256):
 neopixel_setting_characteristic.write(sample)
 neopixel_loop_task = None # asyncio task
     
-aioble.register_services(mode_service, neopixel_service, buttons_service)
+aioble.register_services(neopixel_service, controls_service, buttons_service)
 
 def get_neopixel_config_from_json(json) -> NeopixelConfigurationInterface:
     light_class = json["mode"]
@@ -127,20 +131,6 @@ def decode_mode(data):
     # Decode bytes to int
     return int.from_bytes(data, "little")
 
-# Read the ch
-async def mode_task(connection):
-    global current_kuunappi_mode, is_connected, current_neopixel_identifier, current_neopixel_pattern
-    if not is_connected:
-        await asyncio.sleep_ms(1000)
-        return
-    # Check if the mode has changed.
-    new_mode = mode_characteristic.read()
-    new_mode = decode_mode(new_mode)
-    if new_mode != current_kuunappi_mode:
-        current_kuunappi_mode = new_mode
-        led.toggle()
-        print("Mode changed to", new_mode)
-
 # ! Buttons stuff
 def button_clicked(index):
     global led, phototransistor, bt_connection
@@ -162,6 +152,31 @@ def button_clicked(index):
         # phototransistor.toggle()
     else:
             led.toggle()
+
+# ! Controls stuff
+def controls_task():
+    global current_kuunappi_mode, is_connected, current_neopixel_identifier, current_neopixel_pattern
+    if not is_connected:
+        return
+    # Listen to the controls powerbutton and brightness up/down characteristics.
+    powerbutton = controls_powerbutton_characteristic.read()
+    if powerbutton == b'\x01':
+        print("Powerbutton pressed")
+        # Reset the powerbutton state to 0 again
+        controls_powerbutton_characteristic.write(b'\x00')
+
+    brightness_change = controls_brightness_change_characteristic.read()
+    if brightness_change != b'\x00' and brightness_change != b'':
+        print("Brightness changed! Value:", brightness_change)
+        # Reset the brightness change state to 0 again
+        controls_brightness_change_characteristic.write(b'\x00')
+
+    new_mode = mode_characteristic.read()
+    new_mode = decode_mode(new_mode)
+    if new_mode != current_kuunappi_mode:
+        current_kuunappi_mode = new_mode
+        led.toggle()
+        print("Mode changed to", new_mode)
     
 # Looping task
 async def conn_task(connection):
@@ -170,8 +185,8 @@ async def conn_task(connection):
         # Initial write
         mode_characteristic.write(_encode_mode(current_kuunappi_mode))
     while True:
-        await mode_task(connection)
         await neopixel_task(connection)
+        controls_task()
         await asyncio.sleep_ms(20)
 
 # Serially wait for connections. Don't advertise while a central is
@@ -182,17 +197,14 @@ async def peripheral_task():
         async with await aioble.advertise(
             _ADV_INTERVAL_MS,
             name="Sonatable",
-            services=[_MODE_SERVICE_UUID],
+            services=[CONTROLS_SERVICE_UUID],
             appearance=_BLE_APPEARANCE_GENERIC_REMOTE_CONTROL,
         ) as connection:
             print("Connection from", connection.device)
             # Override BLE MTU
             aioble.config(mtu=256)
             bt_connection = connection
-            # Print out all the descriptors for the button characteristics
-            for characteristic in button_characteristics:
-                print(characteristic)
-            connection.exchange_mtu(256)
+            connection.exchange_mtu(512)
             is_connected = True
             loop = asyncio.get_event_loop()
             loop.create_task(conn_task(connection))
