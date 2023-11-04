@@ -9,7 +9,7 @@ import random
 import struct
 import json
 import machine
-from machine import Pin
+from machine import Pin, PWM
 from debounce import DebouncedSwitch
 from patterns import NeopixelConfigurationInterface, NeopixelSingleColorConfiguration, NeopixelGradientPulseConfiguration, Rainbow
 
@@ -32,8 +32,17 @@ CONTROLS_BRIGHTNESS_CHANGE_CHAR = bluetooth.UUID("f7d9c9df-9c3d-4c9e-9c8d-9c8d9c
 _GENERIC = bluetooth.UUID(0x1848)
 _BLE_APPEARANCE_GENERIC_REMOTE_CONTROL = const(384)
 
-_NOTIFY_ENABLE = const(1)
-_INDICATE_ENABLE = const(2)
+SCREEN_BUITTON_FREQUENCY = const(1000)
+SCREEN_IS_POWERED_ON = False
+BRIGHTNESS_LEVELS = const(15)
+POWERBUTTON_PIN = Pin(22)
+BRIGHT_UP_PIN = Pin(26)
+BRIGHT_DOWN_PIN = Pin(27)
+POWERBUTTON_PVM = PWM(POWERBUTTON_PIN, SCREEN_BUITTON_FREQUENCY)
+BRIGHT_UP_PVM = PWM(BRIGHT_UP_PIN, SCREEN_BUITTON_FREQUENCY)
+BRIGHT_DOWN_PVM = PWM(BRIGHT_DOWN_PIN, SCREEN_BUITTON_FREQUENCY)
+
+REED_PIN = Pin(4, Pin.IN, Pin.PULL_UP)
 
 ble = bluetooth.BLE()
 
@@ -81,6 +90,13 @@ neopixel_loop_task = None # asyncio task
     
 aioble.register_services(neopixel_service, controls_service, buttons_service)
 
+# ! Generic utilities
+
+async def create_pvm_short_pulse(pwm, duration):
+    pwm.duty(512)
+    await asyncio.sleep_ms(duration)
+    pwm.duty(0)
+
 def get_neopixel_config_from_json(json) -> NeopixelConfigurationInterface:
     light_class = json["mode"]
     if (light_class == "solid"):
@@ -122,15 +138,6 @@ async def neopixel_task(connection):
         loop = asyncio.get_event_loop()
         neopixel_loop_task = loop.create_task(current_neopixel_pattern.loop())
 
-# ! Moon Mode stuff
-# Encode the mode message from int to bytes
-def _encode_mode(mode):
-    return mode.to_bytes(4, "little")
-
-def decode_mode(data):
-    # Decode bytes to int
-    return int.from_bytes(data, "little")
-
 # ! Buttons stuff
 def button_clicked(index):
     global led, phototransistor, bt_connection
@@ -154,7 +161,41 @@ def button_clicked(index):
             led.toggle()
 
 # ! Controls stuff
-def controls_task():
+# Set the screen brightness. If max/min, increase/decrease for all possible levels. If +1/-1, increase/decrease by one level.
+async def handle_brightness_change(connection, value):
+    value = value.decode("utf-8")
+    if (value == "+1"):
+        await create_pvm_short_pulse(BRIGHT_UP_PVM, 100)
+    elif (value == "-1"):
+        await create_pvm_short_pulse(BRIGHT_DOWN_PVM, 100)
+    elif (value == "max"):
+        for i in range(BRIGHTNESS_LEVELS):
+            await create_pvm_short_pulse(BRIGHT_UP_PVM, 100)
+    elif (value == "min"):
+        for i in range(BRIGHTNESS_LEVELS):
+            await create_pvm_short_pulse(BRIGHT_DOWN_PVM, 100)
+
+async def handle_powerbutton_click():
+    global SCREEN_IS_POWERED_ON
+    SCREEN_IS_POWERED_ON = not SCREEN_IS_POWERED_ON
+    await create_pvm_short_pulse(POWERBUTTON_PVM, 100)
+
+# Encode the mode message from int to bytes
+def _encode_mode(mode):
+    return mode.to_bytes(4, "little")
+
+def decode_mode(data):
+    # Decode bytes to int
+    return int.from_bytes(data, "little")
+
+# ! REED poweron
+async def handle_reed_trigger():
+    global SCREEN_IS_POWERED_ON
+    # Is the device already on..?
+    if not SCREEN_IS_POWERED_ON:
+        await handle_powerbutton_click()
+
+async def controls_task():
     global current_kuunappi_mode, is_connected, current_neopixel_identifier, current_neopixel_pattern
     if not is_connected:
         return
@@ -164,22 +205,16 @@ def controls_task():
         print("Powerbutton pressed")
         # Reset the powerbutton state to 0 again
         controls_powerbutton_characteristic.write(b'\x00')
-
+        await handle_powerbutton_click()
     brightness_change = controls_brightness_change_characteristic.read()
     if brightness_change != b'\x00' and brightness_change != b'':
         # Reset the brightness change state to 0 again
         controls_brightness_change_characteristic.write(b'\x00')
         #Decode the brightness change value string
         brightness_change = brightness_change.decode("utf-8")
-        if (brightness_change == "+1"):
-            print("Brightness up")
-        elif (brightness_change == "-1"):
-            print("Brightness down")
-        elif (brightness_change == "max"):
-            print("Brightness max")
-        elif (brightness_change == "min"):
-            print("Brightness min")
-
+        # Create a task to handle the brightness change
+        loop = asyncio.get_event_loop()
+        loop.create_task(handle_brightness_change(bt_connection, brightness_change))
     new_mode = mode_characteristic.read()
     new_mode = decode_mode(new_mode)
     if new_mode != current_kuunappi_mode:
@@ -195,7 +230,7 @@ async def conn_task(connection):
         mode_characteristic.write(_encode_mode(current_kuunappi_mode))
     while True:
         await neopixel_task(connection)
-        controls_task()
+        await controls_task()
         await asyncio.sleep_ms(20)
 
 # Serially wait for connections. Don't advertise while a central is
@@ -228,6 +263,7 @@ async def main():
     interrupt_test_pin2 = Pin(2, Pin.IN, Pin.PULL_UP)
     button_sw_1 = DebouncedSwitch(interrupt_test_pin, button_clicked, 0, 150)
     button_sw_2 = DebouncedSwitch(interrupt_test_pin2, button_clicked, 1, 150)
+    reed_sw = DebouncedSwitch(REED_PIN, handle_reed_trigger, delay=150)
     await peripheral_task()
 
 
