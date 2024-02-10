@@ -35,7 +35,7 @@ _BLE_APPEARANCE_GENERIC_REMOTE_CONTROL = const(384)
 SCREEN_BUITTON_FREQUENCY = const(1000)
 SCREEN_IS_POWERED_ON = False
 BRIGHTNESS_LEVELS = const(15)
-POWERBUTTON_PIN = Pin(22)
+POWERBUTTON_PIN = Pin(15, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
 BRIGHT_UP_PIN = Pin(26)
 BRIGHT_DOWN_PIN = Pin(27)
 POWERBUTTON_PVM = PWM(POWERBUTTON_PIN, SCREEN_BUITTON_FREQUENCY)
@@ -57,7 +57,7 @@ current_kuunappi_mode = KUUNAPPI_MODE_SOUNDBOARD
 current_neopixel_pattern = None
 current_neopixel_identifier = None
 led = Pin(14, Pin.OUT)
-led2 = Pin(15, Pin.OUT)
+led2 = Pin(22, Pin.OUT)
 phototransistor = Pin(7, Pin.OUT)
 is_connected = False
 bt_connection = None
@@ -91,11 +91,10 @@ neopixel_loop_task = None # asyncio task
 aioble.register_services(neopixel_service, controls_service, buttons_service)
 
 # ! Generic utilities
-
-async def create_pvm_short_pulse(pwm, duration):
-    pwm.duty(512)
+async def create_short_pin_pulse(pin, duration):
+    pin.value(1)
     await asyncio.sleep_ms(duration)
-    pwm.duty(0)
+    pin.value(0)
 
 def get_neopixel_config_from_json(json) -> NeopixelConfigurationInterface:
     light_class = json["mode"]
@@ -165,20 +164,21 @@ def button_clicked(index):
 async def handle_brightness_change(connection, value):
     value = value.decode("utf-8")
     if (value == "+1"):
-        await create_pvm_short_pulse(BRIGHT_UP_PVM, 100)
+        await create_short_pin_pulse(BRIGHT_UP_PIN, 100)
     elif (value == "-1"):
-        await create_pvm_short_pulse(BRIGHT_DOWN_PVM, 100)
+        await create_short_pin_pulse(BRIGHT_DOWN_PIN, 100)
     elif (value == "max"):
         for i in range(BRIGHTNESS_LEVELS):
-            await create_pvm_short_pulse(BRIGHT_UP_PVM, 100)
+            await create_short_pin_pulse(BRIGHT_UP_PIN, 100)
     elif (value == "min"):
         for i in range(BRIGHTNESS_LEVELS):
-            await create_pvm_short_pulse(BRIGHT_DOWN_PVM, 100)
+            await create_short_pin_pulse(BRIGHT_DOWN_PIN, 100)
 
 async def handle_powerbutton_click():
     global SCREEN_IS_POWERED_ON
     SCREEN_IS_POWERED_ON = not SCREEN_IS_POWERED_ON
-    await create_pvm_short_pulse(POWERBUTTON_PVM, 100)
+    # Toggle the powerbutton
+    await create_short_pin_pulse(POWERBUTTON_PIN, 100)
 
 # Encode the mode message from int to bytes
 def _encode_mode(mode):
@@ -267,4 +267,4 @@ async def main():
     await peripheral_task()
 
 
-asyncio.run(main())
+asyncio.run(main()) 
