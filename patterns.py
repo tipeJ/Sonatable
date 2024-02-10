@@ -17,11 +17,11 @@ _JUNGLE_END = const(135)
 _TAVERNA = const(0)
 _DRAGON = const(140)
 _REED = const(70)
+_LED_PIN = const(22)
 class NeopixelConfigurationInterface:
     def __init__(self):
-        self.PIN = Pin(28)
-        self.NUM_PIXELS = 7
-        self.NP = Neopixel(self.NUM_PIXELS, 0, 28, "RGBW")
+        self.NUM_PIXELS = 151
+        self.NP = Neopixel(self.NUM_PIXELS, 0, _LED_PIN, "RGBW")
         # Set up mask for brightness. 0-255 value for each pixel
         self.brightness_mask = [255] * self.NUM_PIXELS
 
@@ -192,6 +192,12 @@ class Rainbow(NeopixelConfigurationInterface):
     async def terminate(self):
         # Lerp to black over 1 second.
         self.fill((0, 0, 0, 0))
+        return
+        for i in range(100):
+            for i in range(self.NUM_PIXELS):
+                self.set_pixel(i, lerp(self.get_pixel_color(i), (0, 0, 0, 0), i / 100))
+            self.show()
+            await asyncio.sleep_ms(10)
 
     async def loop(self):
         # Color shift the fill to the other color, one step at a time. After the last step, start over.

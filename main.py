@@ -9,7 +9,9 @@ import random
 import struct
 import json
 import machine
-from machine import Pin, PWM
+import ds18x20 as ds # Temperature sensor
+import onewire
+from machine import Pin
 from debounce import DebouncedSwitch
 from patterns import NeopixelConfigurationInterface, NeopixelSingleColorConfiguration, NeopixelGradientPulseConfiguration, Rainbow
 
@@ -18,12 +20,12 @@ NEOPIXEL_SERVICE_UUID = bluetooth.UUID("f7d9c9d3-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 NEOPIXEL_COLOR_CHAR_UUID = bluetooth.UUID("f7d9c9d4-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 BUTTONS_SERVICE_UUID = bluetooth.UUID("f7d9c9d5-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 BUTTONS_1_CHAR_UUID = bluetooth.UUID("f7d9c9d6-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
-BUTTONS_2_CHAR_UUID = bluetooth.UUID("f7d9c9d7-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
-BUTTONS_3_CHAR_UUID = bluetooth.UUID("f7d9c9d8-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
-BUTTONS_4_CHAR_UUID = bluetooth.UUID("f7d9c9d9-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
-BUTTONS_5_CHAR_UUID = bluetooth.UUID("f7d9c9da-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
-BUTTONS_6_CHAR_UUID = bluetooth.UUID("f7d9c9db-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
-BUTTONS_7_CHAR_UUID = bluetooth.UUID("f7d9c9dc-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
+TEMPERATURE_CHAR_UUID = bluetooth.UUID("f7d9c9d7-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
+TEMPERATURE_SERVICE_UUID = bluetooth.UUID("f7d9c9d8-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
+# BUTTONS_4_CHAR_UUID = bluetooth.UUID("f7d9c9d9-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
+# BUTTONS_5_CHAR_UUID = bluetooth.UUID("f7d9c9da-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
+# BUTTONS_6_CHAR_UUID = bluetooth.UUID("f7d9c9db-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
+# BUTTONS_7_CHAR_UUID = bluetooth.UUID("f7d9c9dc-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 CONTROLS_SERVICE_UUID = bluetooth.UUID("f7d9c9dd-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
 CONTROLS_MODE_CHAR_UUID = bluetooth.UUID('f7d9c9d2-9c3d-4c9e-9c8d-9c8d9c8d9c8d')
 CONTROLS_POWERBUTTON_CHAR_UUID = bluetooth.UUID("f7d9c9de-9c3d-4c9e-9c8d-9c8d9c8d9c8d")
@@ -36,13 +38,13 @@ SCREEN_BUITTON_FREQUENCY = const(1000)
 SCREEN_IS_POWERED_ON = False
 BRIGHTNESS_LEVELS = const(15)
 POWERBUTTON_PIN = Pin(15, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
-BRIGHT_UP_PIN = Pin(26)
-BRIGHT_DOWN_PIN = Pin(27)
-POWERBUTTON_PVM = PWM(POWERBUTTON_PIN, SCREEN_BUITTON_FREQUENCY)
-BRIGHT_UP_PVM = PWM(BRIGHT_UP_PIN, SCREEN_BUITTON_FREQUENCY)
-BRIGHT_DOWN_PVM = PWM(BRIGHT_DOWN_PIN, SCREEN_BUITTON_FREQUENCY)
+BRIGHT_UP_PIN = Pin(26, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
+BRIGHT_DOWN_PIN = Pin(27, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
 
-REED_PIN = Pin(4, Pin.IN, Pin.PULL_UP)
+REED_PIN = Pin(0, mode=Pin.IN, value=1, pull=Pin.PULL_UP)
+THERMOMETER_PIN = Pin(9)
+THERMOMETER_SENSOR = ds.DS18X20(onewire.OneWire(THERMOMETER_PIN))
+THERMOMETER_ROMS = THERMOMETER_SENSOR.scan()
 
 ble = bluetooth.BLE()
 
@@ -56,8 +58,7 @@ KUUNAPPI_MODE_LIGHT = const(1)
 current_kuunappi_mode = KUUNAPPI_MODE_SOUNDBOARD
 current_neopixel_pattern = None
 current_neopixel_identifier = None
-led = Pin(14, Pin.OUT)
-led2 = Pin(22, Pin.OUT)
+led = Pin(1, Pin.OUT)
 phototransistor = Pin(7, Pin.OUT)
 is_connected = False
 bt_connection = None
@@ -72,14 +73,9 @@ mode_characteristic = aioble.Characteristic(
 neopixel_service = aioble.Service(NEOPIXEL_SERVICE_UUID)
 neopixel_setting_characteristic = aioble.Characteristic(neopixel_service, NEOPIXEL_COLOR_CHAR_UUID, write=True, read=True)
 buttons_service = aioble.Service(BUTTONS_SERVICE_UUID)
-buttons_1_characteristic = aioble.Characteristic(buttons_service, BUTTONS_1_CHAR_UUID, notify=True)
-buttons_2_characteristic = aioble.Characteristic(buttons_service, BUTTONS_2_CHAR_UUID, notify=True)
-buttons_3_characteristic = aioble.Characteristic(buttons_service, BUTTONS_3_CHAR_UUID, notify=True)
-buttons_4_characteristic = aioble.Characteristic(buttons_service, BUTTONS_4_CHAR_UUID, notify=True)
-buttons_5_characteristic = aioble.Characteristic(buttons_service, BUTTONS_5_CHAR_UUID, notify=True)
-buttons_6_characteristic = aioble.Characteristic(buttons_service, BUTTONS_6_CHAR_UUID, notify=True)
-buttons_7_characteristic = aioble.Characteristic(buttons_service, BUTTONS_7_CHAR_UUID, notify=True)
-button_characteristics = [buttons_1_characteristic, buttons_2_characteristic, buttons_3_characteristic, buttons_4_characteristic, buttons_5_characteristic, buttons_6_characteristic, buttons_7_characteristic]
+buttons_characteristic = aioble.Characteristic(buttons_service, BUTTONS_1_CHAR_UUID, notify=True)
+temperature_service = aioble.Service(TEMPERATURE_SERVICE_UUID)
+temperature_characteristic = aioble.Characteristic(temperature_service, TEMPERATURE_CHAR_UUID, notify=True)
 
 # Write a 256 byte buffer to the characteristic.
 sample = bytearray(256)
@@ -88,7 +84,7 @@ for i in range(256):
 neopixel_setting_characteristic.write(sample)
 neopixel_loop_task = None # asyncio task
     
-aioble.register_services(neopixel_service, controls_service, buttons_service)
+aioble.register_services(neopixel_service, controls_service, buttons_service, temperature_service)
 
 # ! Generic utilities
 async def create_short_pin_pulse(pin, duration):
@@ -142,22 +138,8 @@ def button_clicked(index):
     global led, phototransistor, bt_connection
     print("Button clicked", index)
     # Get the characteristic
-    characteristic = button_characteristics[index]
-    # Notify the characteristic, with current timestamp
-    current_time = machine.RTC().datetime()
-    # Take the second to last value, which is the seconds
-    current_time = current_time[6]
-    # Encode the time to bytes
-    current_time = current_time.to_bytes(4, "little")
-    print(bt_connection)
-    characteristic.notify(bt_connection, str(current_time))
-    
-    return
-    if (index == 1):
-        led2.toggle()
-        # phototransistor.toggle()
-    else:
-            led.toggle()
+    characteristic = buttons_characteristic
+    characteristic.notify(bt_connection, str(index))
 
 # ! Controls stuff
 # Set the screen brightness. If max/min, increase/decrease for all possible levels. If +1/-1, increase/decrease by one level.
@@ -177,6 +159,9 @@ async def handle_brightness_change(connection, value):
 async def handle_powerbutton_click():
     global SCREEN_IS_POWERED_ON
     SCREEN_IS_POWERED_ON = not SCREEN_IS_POWERED_ON
+    # Toggle led
+    # led.value(not led.value())
+    # Print reed pin value
     # Toggle the powerbutton
     await create_short_pin_pulse(POWERBUTTON_PIN, 100)
 
@@ -189,11 +174,12 @@ def decode_mode(data):
     return int.from_bytes(data, "little")
 
 # ! REED poweron
-async def handle_reed_trigger():
-    global SCREEN_IS_POWERED_ON
+def handle_reed_trigger(*args, **kwargs):
+    print("Reed triggered", led.value())
     # Is the device already on..?
-    if not SCREEN_IS_POWERED_ON:
-        await handle_powerbutton_click()
+    # Turn led on/off
+    led.value(not led.value())
+
 
 async def controls_task():
     global current_kuunappi_mode, is_connected, current_neopixel_identifier, current_neopixel_pattern
@@ -233,6 +219,20 @@ async def conn_task(connection):
         await controls_task()
         await asyncio.sleep_ms(20)
 
+async def thermometer_task():
+    global is_connected, bt_connection
+    while True:
+        await asyncio.sleep_ms(1000)
+        # if is_connected:
+        #     for rom in THERMOMETER_ROMS:
+        #         THERMOMETER_SENSOR.convert_temp()
+        #         await asyncio.sleep_ms(750)
+        #         temperature = THERMOMETER_SENSOR.read_temp(rom)
+        #         print("Temperature:", temperature)
+        #         # Send the temperature to the central
+        #         temperature_characteristic.notify(bt_connection, str(temperature))
+        #         await asyncio.sleep_ms(1000)
+
 # Serially wait for connections. Don't advertise while a central is
 # connected.
 async def peripheral_task():
@@ -252,6 +252,7 @@ async def peripheral_task():
             is_connected = True
             loop = asyncio.get_event_loop()
             loop.create_task(conn_task(connection))
+            loop.create_task(thermometer_task())
             loop.run_forever()
             await connection.disconnected()
             print("Disconnected")
@@ -259,11 +260,11 @@ async def peripheral_task():
 
 # Run both tasks.
 async def main():
-    interrupt_test_pin = Pin(0, Pin.IN, Pin.PULL_UP)
-    interrupt_test_pin2 = Pin(2, Pin.IN, Pin.PULL_UP)
-    button_sw_1 = DebouncedSwitch(interrupt_test_pin, button_clicked, 0, 150)
-    button_sw_2 = DebouncedSwitch(interrupt_test_pin2, button_clicked, 1, 150)
-    reed_sw = DebouncedSwitch(REED_PIN, handle_reed_trigger, delay=150)
+    # interrupt_test_pin = Pin(0, Pin.IN, Pin.PULL_UP)
+    # interrupt_test_pin2 = Pin(2, Pin.IN, Pin.PULL_UP)
+    # button_sw_1 = DebouncedSwitch(interrupt_test_pin, button_clicked, 0, 150)
+    # button_sw_2 = DebouncedSwitch(interrupt_test_pin2, button_clicked, 1, 150)
+    reed_sw = DebouncedSwitch(REED_PIN, handle_reed_trigger, delay=200)
     await peripheral_task()
 
 
