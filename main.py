@@ -35,6 +35,8 @@ _GENERIC = bluetooth.UUID(0x1848)
 _BLE_APPEARANCE_GENERIC_REMOTE_CONTROL = const(384)
 
 SCREEN_BUITTON_FREQUENCY = const(1000)
+SCREEN_LATEST_BOOT_TIME = machine.RTC().datetime()
+SCREEN_MIN_DELAY_BETWEEN_BOOT = const(5)
 SCREEN_IS_POWERED_ON = False
 BRIGHTNESS_LEVELS = const(15)
 POWERBUTTON_PIN = Pin(15, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
@@ -157,8 +159,16 @@ async def handle_brightness_change(connection, value):
             await create_short_pin_pulse(BRIGHT_DOWN_PIN, 100)
 
 async def handle_powerbutton_click():
-    global SCREEN_IS_POWERED_ON
+    global SCREEN_IS_POWERED_ON, SCREEN_LATEST_BOOT_TIME, SCREEN_MIN_DELAY_BETWEEN_BOOT
+    # Check if the screen has been booted recently, if so, ignore the powerbutton click.
+    current_time = machine.RTC().datetime()
+    # Take the second to last value, which is the seconds
+    current_time = current_time[6]
+    # If the difference between the current time and the latest boot time is less than the minimum delay, ignore the powerbutton click.
+    if (current_time - SCREEN_LATEST_BOOT_TIME) < SCREEN_MIN_DELAY_BETWEEN_BOOT:
+        return
     SCREEN_IS_POWERED_ON = not SCREEN_IS_POWERED_ON
+    SCREEN_LATEST_BOOT_TIME = current_time
     # Toggle led
     # led.value(not led.value())
     # Print reed pin value
