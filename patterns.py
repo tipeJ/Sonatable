@@ -107,19 +107,28 @@ class NeopixelConfigurationInterface:
 
 class NeopixelSingleColorConfiguration(NeopixelConfigurationInterface):
     def __init__(self, color):
+        # If given color is RGB, convert to RGBW.
+        if len(color) == 3:
+            color = RGB2RGBW(color[0], color[1], color[2])
         self.color = color
         super().__init__()
 
     @staticmethod
     def from_json(json):
-        return NeopixelSingleColorConfiguration(
-            (json["color"][0], json["color"][1], json["color"][2])
-        )
+        # Check whether the colors are RGB or RGBW.
+        if len(json["color"]) == 3:
+            return NeopixelSingleColorConfiguration(
+                RGB2RGBW(json["color"][0], json["color"][1], json["color"][2])
+            )
+        else:
+            return NeopixelSingleColorConfiguration(
+                (json["color"][0], json["color"][1], json["color"][2], json["color"][3])
+            )
 
     async def setup(self):
         # Lerp to the color over 1 second.
         for i in range(100):
-            self.fill(lerp((0, 0, 0), self.color, i / 100))
+            self.fill(lerp((0, 0, 0, 0), self.color, i / 100))
             self.NP.show()
             await asyncio.sleep_ms(10)
 
@@ -133,9 +142,16 @@ class NeopixelSingleColorConfiguration(NeopixelConfigurationInterface):
     async def terminate(self):
         # Lerp to black over 1 second.
         for i in range(100):
-            self.fill(lerp(self.color, (0, 0, 0), i / 100))
+            self.fill(lerp(self.color, (0, 0, 0, 0), i / 100))
             self.NP.show()
             await asyncio.sleep_ms(10)
+
+    # ? Live modification functions (Mainly for static color modification with physical buttons)
+    def increase_color_for_channel(self, channel, amount):
+        # Increase the color for the given channel by the given amount. Loop back to 0 if it exceeds 255.
+        self.color = list(self.color)
+        self.color[channel] = (self.color[channel] + amount) % 256
+        self.color = tuple(self.color)
 
 class NeopixelGradientPulseConfiguration(NeopixelConfigurationInterface):
     def __init__(self, color1, color2, steps=50, wait_ms=50):

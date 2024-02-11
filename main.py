@@ -38,10 +38,19 @@ SCREEN_BUITTON_FREQUENCY = const(1000)
 SCREEN_LATEST_BOOT_TIME = machine.RTC().datetime()
 SCREEN_MIN_DELAY_BETWEEN_BOOT = const(5)
 SCREEN_IS_POWERED_ON = False
-BRIGHTNESS_LEVELS = const(15)
+BRIGHTNESS_LEVELS = const(25)
 POWERBUTTON_PIN = Pin(15, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
 BRIGHT_UP_PIN = Pin(26, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
 BRIGHT_DOWN_PIN = Pin(27, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
+
+# Moon Buttons
+MOON_BUTTON_1_PIN = Pin(2, mode=Pin.IN, pull=Pin.PULL_UP)
+MOON_BUTTON_2_PIN = Pin(3, mode=Pin.IN, pull=Pin.PULL_UP)
+MOON_BUTTON_3_PIN = Pin(4, mode=Pin.IN, pull=Pin.PULL_UP)
+MOON_BUTTON_4_PIN = Pin(5, mode=Pin.IN, pull=Pin.PULL_UP)
+MOON_BUTTON_5_PIN = Pin(6, mode=Pin.IN, pull=Pin.PULL_UP)
+MOON_BUTTON_6_PIN = Pin(7, mode=Pin.IN, pull=Pin.PULL_UP)
+MOON_BUTTON_7_PIN = Pin(8, mode=Pin.IN, pull=Pin.PULL_UP)
 
 REED_PIN = Pin(0, mode=Pin.IN, value=1, pull=Pin.PULL_UP)
 THERMOMETER_PIN = Pin(9)
@@ -55,11 +64,15 @@ _ADV_INTERVAL_MS = 250_000
 
 # Modes for the buttons.
 KUUNAPPI_MODE_SOUNDBOARD = const(0)
-KUUNAPPI_MODE_LIGHT = const(1)
+KUUNAPPI_MODE_CONTROLS_AND_LED = const(1)
 
-current_kuunappi_mode = KUUNAPPI_MODE_SOUNDBOARD
+current_kuunappi_mode = KUUNAPPI_MODE_CONTROLS_AND_LED
+
+
 current_neopixel_pattern = None
 current_neopixel_identifier = None
+static_board_neopixel_pattern = NeopixelSingleColorConfiguration((0, 0, 0, 0))
+NEOPIXEL_HAS_STATIC = True # True if the neopixel is currently controlled via physical buttons, false if by BLE
 led = Pin(1, Pin.OUT)
 phototransistor = Pin(7, Pin.OUT)
 is_connected = False
@@ -104,8 +117,8 @@ def get_neopixel_config_from_json(json) -> NeopixelConfigurationInterface:
         return NeopixelGradientPulseConfiguration.from_json(json)
 
 # ! Neopixel stuff
-async def neopixel_task(connection):
-    global current_neopixel_pattern, is_connected, current_neopixel_identifier, neopixel_loop_task
+async def neopixel_task_BLE(connection):
+    global current_neopixel_pattern, is_connected, current_neopixel_identifier, neopixel_loop_task, NEOPIXEL_HAS_STATIC
     if not is_connected:
         await asyncio.sleep_ms(1000)
         return
@@ -113,7 +126,7 @@ async def neopixel_task(connection):
     new_mode = neopixel_setting_characteristic.read()
     if current_neopixel_identifier is None:
         current_neopixel_identifier = new_mode
-    elif new_mode != current_neopixel_identifier:
+    elif new_mode != current_neopixel_identifier or NEOPIXEL_HAS_STATIC:
         print(new_mode)
         current_neopixel_identifier = new_mode
         # Decode bytes to json
@@ -129,19 +142,58 @@ async def neopixel_task(connection):
             if current_neopixel_pattern is not None:
                 # Activate the final state of the neopixel mode
                 await current_neopixel_pattern.terminate()
+            if NEOPIXEL_HAS_STATIC:
+                await static_board_neopixel_pattern.terminate()
         # Start the new task in the event loop
         current_neopixel_pattern = new_neopixel_pattern
+        NEOPIXEL_HAS_STATIC = False
         await current_neopixel_pattern.setup()
         loop = asyncio.get_event_loop()
         neopixel_loop_task = loop.create_task(current_neopixel_pattern.loop())
 
 # ! Buttons stuff
+async def switch_neopixel_task_to_static(): # Switch the neopixel task to the static loop, if it's not already there.
+    global current_neopixel_pattern, neopixel_loop_task, NEOPIXEL_HAS_STATIC
+    if not NEOPIXEL_HAS_STATIC:
+        if neopixel_loop_task is not None:
+            neopixel_loop_task.cancel()
+            if current_neopixel_pattern is not None:
+                await current_neopixel_pattern.terminate()
+        loop = asyncio.get_event_loop()
+        neopixel_loop_task = loop.create_task(static_board_neopixel_pattern.loop())
+        NEOPIXEL_HAS_STATIC = True
+
 def button_clicked(index):
-    global led, phototransistor, bt_connection
-    print("Button clicked", index)
-    # Get the characteristic
-    characteristic = buttons_characteristic
-    characteristic.notify(bt_connection, str(index))
+    global led, phototransistor, bt_connection, current_kuunappi_mode, static_board_neopixel_pattern, NEOPIXEL_HAS_STATIC
+    if (current_kuunappi_mode == KUUNAPPI_MODE_CONTROLS_AND_LED): # If the mode is controls and led, no need for BT connection.
+        # Buttons 1-3 are for screen buttons, 4-7 are for RGBW switching for static colors.
+        if (index == 0): # Powerbutton
+            _ = handle_powerbutton_click()
+        elif (index == 1): # Brightness down
+            _ = create_short_pin_pulse(BRIGHT_DOWN_PIN, 100)
+        elif (index == 2): # Brightness up
+            _ = create_short_pin_pulse(BRIGHT_UP_PIN, 100)
+        elif (index == 3): # LEDS: RED
+            # Increase the brightness of the red LEDs by 25
+            static_board_neopixel_pattern.increase_color_for_channel(0, 25)
+            _ = switch_neopixel_task_to_static()            
+        elif (index == 4): # LEDS: GREEN
+            # Increase the brightness of the green LEDs by 25
+            static_board_neopixel_pattern.increase_color_for_channel(1, 25)
+            _ = switch_neopixel_task_to_static()
+        elif (index == 5): # LEDS: BLUE
+            # Increase the brightness of the blue LEDs by 25
+            static_board_neopixel_pattern.increase_color_for_channel(2, 25)
+            _ = switch_neopixel_task_to_static()
+        elif (index == 6): # LEDS: WHITE
+            # Increase the brightness of the white LEDs by 25
+            static_board_neopixel_pattern.increase_color_for_channel(3, 25)
+            _ = switch_neopixel_task_to_static()
+    else: # Send the button click to the device
+        print("Button clicked", index)
+        # Get the characteristic
+        characteristic = buttons_characteristic
+        characteristic.notify(bt_connection, str(index))
 
 # ! Controls stuff
 # Set the screen brightness. If max/min, increase/decrease for all possible levels. If +1/-1, increase/decrease by one level.
@@ -165,13 +217,10 @@ async def handle_powerbutton_click():
     # Take the second to last value, which is the seconds
     current_time = current_time[6]
     # If the difference between the current time and the latest boot time is less than the minimum delay, ignore the powerbutton click.
-    if (current_time - SCREEN_LATEST_BOOT_TIME) < SCREEN_MIN_DELAY_BETWEEN_BOOT:
-        return
+    # if (current_time - SCREEN_LATEST_BOOT_TIME) < SCREEN_MIN_DELAY_BETWEEN_BOOT:
+    #     return
     SCREEN_IS_POWERED_ON = not SCREEN_IS_POWERED_ON
     SCREEN_LATEST_BOOT_TIME = current_time
-    # Toggle led
-    # led.value(not led.value())
-    # Print reed pin value
     # Toggle the powerbutton
     await create_short_pin_pulse(POWERBUTTON_PIN, 100)
 
@@ -225,7 +274,7 @@ async def conn_task(connection):
         # Initial write
         mode_characteristic.write(_encode_mode(current_kuunappi_mode))
     while True:
-        await neopixel_task(connection)
+        await neopixel_task_BLE(connection)
         await controls_task()
         await asyncio.sleep_ms(20)
 
@@ -270,10 +319,13 @@ async def peripheral_task():
 
 # Run both tasks.
 async def main():
-    # interrupt_test_pin = Pin(0, Pin.IN, Pin.PULL_UP)
-    # interrupt_test_pin2 = Pin(2, Pin.IN, Pin.PULL_UP)
-    # button_sw_1 = DebouncedSwitch(interrupt_test_pin, button_clicked, 0, 150)
-    # button_sw_2 = DebouncedSwitch(interrupt_test_pin2, button_clicked, 1, 150)
+    button_sw_1 = DebouncedSwitch(MOON_BUTTON_1_PIN, button_clicked, 0, 150)
+    button_sw_2 = DebouncedSwitch(MOON_BUTTON_2_PIN, button_clicked, 1, 150)
+    button_sw_3 = DebouncedSwitch(MOON_BUTTON_3_PIN, button_clicked, 2, 150)
+    button_sw_4 = DebouncedSwitch(MOON_BUTTON_4_PIN, button_clicked, 3, 150)
+    button_sw_5 = DebouncedSwitch(MOON_BUTTON_5_PIN, button_clicked, 4, 150)
+    button_sw_6 = DebouncedSwitch(MOON_BUTTON_6_PIN, button_clicked, 5, 150)
+    button_sw_7 = DebouncedSwitch(MOON_BUTTON_7_PIN, button_clicked, 6, 150)
     reed_sw = DebouncedSwitch(REED_PIN, handle_reed_trigger, delay=200)
     await peripheral_task()
 
