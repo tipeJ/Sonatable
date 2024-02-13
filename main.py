@@ -74,7 +74,6 @@ current_neopixel_identifier = None
 static_board_neopixel_pattern = NeopixelSingleColorConfiguration((0, 0, 0, 0))
 NEOPIXEL_HAS_STATIC = True # True if the neopixel is currently controlled via physical buttons, false if by BLE
 led = Pin(1, Pin.OUT)
-phototransistor = Pin(7, Pin.OUT)
 is_connected = False
 bt_connection = None
 
@@ -164,7 +163,7 @@ async def switch_neopixel_task_to_static(): # Switch the neopixel task to the st
         NEOPIXEL_HAS_STATIC = True
 
 def button_clicked(index):
-    global led, phototransistor, bt_connection, current_kuunappi_mode, static_board_neopixel_pattern, NEOPIXEL_HAS_STATIC
+    global led, bt_connection, current_kuunappi_mode, static_board_neopixel_pattern, NEOPIXEL_HAS_STATIC
     if (current_kuunappi_mode == KUUNAPPI_MODE_CONTROLS_AND_LED): # If the mode is controls and led, no need for BT connection.
         # Buttons 1-3 are for screen buttons, 4-7 are for RGBW switching for static colors.
         if (index == 0): # Powerbutton
