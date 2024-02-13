@@ -71,8 +71,8 @@ current_kuunappi_mode = KUUNAPPI_MODE_CONTROLS_AND_LED
 
 current_neopixel_pattern = None
 current_neopixel_identifier = None
-static_board_neopixel_pattern = NeopixelSingleColorConfiguration((0, 0, 0, 0))
-NEOPIXEL_HAS_STATIC = True # True if the neopixel is currently controlled via physical buttons, false if by BLE
+latest_neopixel_ble_update = None
+static_board_neopixel_pattern = NeopixelSingleColorConfiguration((255, 0, 0, 0))
 led = Pin(1, Pin.OUT)
 is_connected = False
 bt_connection = None
@@ -116,54 +116,56 @@ def get_neopixel_config_from_json(json) -> NeopixelConfigurationInterface:
         return NeopixelGradientPulseConfiguration.from_json(json)
 
 # ! Neopixel stuff
+async def neopixel_task():
+    global current_neopixel_pattern, current_neopixel_identifier, neopixel_loop_task
+    previous_neopixel_identifier = None
+    while True:
+        if current_neopixel_identifier != previous_neopixel_identifier:
+            # Update
+            previous_neopixel_identifier = current_neopixel_identifier
+            if current_neopixel_identifier is not None:
+                # Start the loop, terminate the previous one if it exists.
+                if neopixel_loop_task is not None:
+                    neopixel_loop_task.cancel()
+                    if current_neopixel_pattern is not None:
+                        await current_neopixel_pattern.terminate()
+                if current_neopixel_identifier == 'STATIC':
+                    await static_board_neopixel_pattern.setup()
+                    loop = asyncio.get_event_loop()
+                    neopixel_loop_task = loop.create_task(static_board_neopixel_pattern.loop())
+                else:
+                    try:
+                        current_neopixel_pattern = get_neopixel_config_from_json(current_neopixel_identifier)
+                        await current_neopixel_pattern.setup()
+                        loop = asyncio.get_event_loop()
+                        neopixel_loop_task = loop.create_task(current_neopixel_pattern.loop())
+                    except Exception as e:
+                        print("Error:", e)
+                        return
+        await asyncio.sleep_ms(200)
+
 async def neopixel_task_BLE(connection):
-    global current_neopixel_pattern, is_connected, current_neopixel_identifier, neopixel_loop_task, NEOPIXEL_HAS_STATIC
+    global current_neopixel_pattern, is_connected, current_neopixel_identifier, latest_neopixel_ble_update
     if not is_connected:
         await asyncio.sleep_ms(1000)
         return
     # Check if the mode has changed.
     new_mode = neopixel_setting_characteristic.read()
-    if current_neopixel_identifier is None:
+    if latest_neopixel_ble_update is None or new_mode != latest_neopixel_ble_update:
+        latest_neopixel_ble_update = new_mode
+        try:
+            # Check if valid JSON
+            new_mode = json.loads(new_mode)
+        except Exception as e:
+            print("BLE Error:", e)
+            await asyncio.sleep_ms(1000)
+            return
         current_neopixel_identifier = new_mode
-    elif new_mode != current_neopixel_identifier or NEOPIXEL_HAS_STATIC:
-        print(new_mode)
-        current_neopixel_identifier = new_mode
-        # Decode bytes to json
-        new_mode = new_mode.decode("utf-8")
-        new_mode = json.loads(new_mode)
-        # Parse the class from the json parameter "mode"
-        light_class = new_mode["mode"]
-        new_neopixel_pattern = get_neopixel_config_from_json(new_mode)
-        print("Mode changed to", new_mode)
-        # If neoixel loop task is running, cancel it.
-        if neopixel_loop_task is not None:
-            neopixel_loop_task.cancel()
-            if current_neopixel_pattern is not None:
-                # Activate the final state of the neopixel mode
-                await current_neopixel_pattern.terminate()
-            if NEOPIXEL_HAS_STATIC:
-                await static_board_neopixel_pattern.terminate()
-        # Start the new task in the event loop
-        current_neopixel_pattern = new_neopixel_pattern
-        NEOPIXEL_HAS_STATIC = False
-        await current_neopixel_pattern.setup()
-        loop = asyncio.get_event_loop()
-        neopixel_loop_task = loop.create_task(current_neopixel_pattern.loop())
 
 # ! Buttons stuff
-async def switch_neopixel_task_to_static(): # Switch the neopixel task to the static loop, if it's not already there.
-    global current_neopixel_pattern, neopixel_loop_task, NEOPIXEL_HAS_STATIC
-    if not NEOPIXEL_HAS_STATIC:
-        if neopixel_loop_task is not None:
-            neopixel_loop_task.cancel()
-            if current_neopixel_pattern is not None:
-                await current_neopixel_pattern.terminate()
-        loop = asyncio.get_event_loop()
-        neopixel_loop_task = loop.create_task(static_board_neopixel_pattern.loop())
-        NEOPIXEL_HAS_STATIC = True
-
 def button_clicked(index):
-    global led, bt_connection, current_kuunappi_mode, static_board_neopixel_pattern, NEOPIXEL_HAS_STATIC
+    global led, bt_connection, current_kuunappi_mode, static_board_neopixel_pattern, current_neopixel_identifier
+    print("Button clicked", index)
     if (current_kuunappi_mode == KUUNAPPI_MODE_CONTROLS_AND_LED): # If the mode is controls and led, no need for BT connection.
         # Buttons 1-3 are for screen buttons, 4-7 are for RGBW switching for static colors.
         if (index == 0): # Powerbutton
@@ -175,21 +177,20 @@ def button_clicked(index):
         elif (index == 3): # LEDS: RED
             # Increase the brightness of the red LEDs by 25
             static_board_neopixel_pattern.increase_color_for_channel(0, 25)
-            _ = switch_neopixel_task_to_static()            
+            current_neopixel_identifier = 'STATIC'
         elif (index == 4): # LEDS: GREEN
             # Increase the brightness of the green LEDs by 25
             static_board_neopixel_pattern.increase_color_for_channel(1, 25)
-            _ = switch_neopixel_task_to_static()
+            current_neopixel_identifier = 'STATIC'
         elif (index == 5): # LEDS: BLUE
             # Increase the brightness of the blue LEDs by 25
             static_board_neopixel_pattern.increase_color_for_channel(2, 25)
-            _ = switch_neopixel_task_to_static()
+            current_neopixel_identifier = 'STATIC'
         elif (index == 6): # LEDS: WHITE
             # Increase the brightness of the white LEDs by 25
             static_board_neopixel_pattern.increase_color_for_channel(3, 25)
-            _ = switch_neopixel_task_to_static()
+            current_neopixel_identifier = 'STATIC'
     else: # Send the button click to the device
-        print("Button clicked", index)
         # Get the characteristic
         characteristic = buttons_characteristic
         characteristic.notify(bt_connection, str(index))
@@ -326,6 +327,7 @@ async def main():
     button_sw_6 = DebouncedSwitch(MOON_BUTTON_6_PIN, button_clicked, 5, 150)
     button_sw_7 = DebouncedSwitch(MOON_BUTTON_7_PIN, button_clicked, 6, 150)
     reed_sw = DebouncedSwitch(REED_PIN, handle_reed_trigger, delay=200)
+    asyncio.get_event_loop().create_task(neopixel_task())
     await peripheral_task()
 
 
