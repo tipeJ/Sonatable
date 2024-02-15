@@ -282,15 +282,17 @@ async def thermometer_task():
     global is_connected, bt_connection
     while True:
         await asyncio.sleep_ms(1000)
-        # if is_connected:
-        #     for rom in THERMOMETER_ROMS:
-        #         THERMOMETER_SENSOR.convert_temp()
-        #         await asyncio.sleep_ms(750)
-        #         temperature = THERMOMETER_SENSOR.read_temp(rom)
-        #         print("Temperature:", temperature)
-        #         # Send the temperature to the central
-        #         temperature_characteristic.notify(bt_connection, str(temperature))
-        #         await asyncio.sleep_ms(1000)
+        if is_connected:
+            try:
+                for rom in THERMOMETER_ROMS:
+                    THERMOMETER_SENSOR.convert_temp()
+                    await asyncio.sleep_ms(750)
+                    temperature = THERMOMETER_SENSOR.read_temp(rom)
+                    print("Temperature:", temperature)
+                    # Send the temperature to the central
+                    temperature_characteristic.notify(bt_connection, str(temperature))
+            except Exception as e:
+                print("Error handling thermometer data:", e)
 
 # Serially wait for connections. Don't advertise while a central is
 # connected.
@@ -315,6 +317,7 @@ async def peripheral_task():
             loop.run_forever()
             await connection.disconnected()
             print("Disconnected")
+            is_connected = False
 
 
 # Run both tasks.
