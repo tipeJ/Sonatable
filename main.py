@@ -199,7 +199,6 @@ def button_clicked(index):
 # ! Controls stuff
 # Set the screen brightness. If max/min, increase/decrease for all possible levels. If +1/-1, increase/decrease by one level.
 async def handle_brightness_change(connection, value):
-    value = value.decode("utf-8")
     if (value == "+1"):
         await create_short_pin_pulse(BRIGHT_UP_PIN, 100)
     elif (value == "-1"):
