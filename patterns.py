@@ -1,5 +1,6 @@
 from neopixel import Neopixel
 from machine import Pin
+from main import LEDSTRIP_PIN
 import uasyncio as asyncio
 from micropython import const
 from color_utils import hsi2rgbw, RGBToRGBW, RGB2RGBW, lerp, random_rgb, wheel
@@ -17,11 +18,10 @@ _JUNGLE_END = const(135)
 _TAVERNA = const(0)
 _DRAGON = const(140)
 _REED = const(70)
-_LED_PIN = const(22)
 class NeopixelConfigurationInterface:
     def __init__(self):
         self.NUM_PIXELS = 151
-        self.NP = Neopixel(self.NUM_PIXELS, 0, _LED_PIN, "RGBW")
+        self.NP = Neopixel(self.NUM_PIXELS, 0, LEDSTRIP_PIN, "RGBW")
         # Set up mask for brightness. 0-255 value for each pixel
         self.brightness_mask = [255] * self.NUM_PIXELS
 

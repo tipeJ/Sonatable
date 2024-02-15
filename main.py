@@ -42,6 +42,7 @@ BRIGHTNESS_LEVELS = const(25)
 POWERBUTTON_PIN = Pin(15, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
 BRIGHT_UP_PIN = Pin(26, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
 BRIGHT_DOWN_PIN = Pin(27, mode=Pin.OUT, value=0, pull=Pin.PULL_UP)
+LEDSTRIP_PIN = const(22)
 
 # Moon Buttons
 MOON_BUTTON_1_PIN = Pin(2, mode=Pin.IN, pull=Pin.PULL_UP)
