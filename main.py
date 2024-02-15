@@ -281,7 +281,7 @@ async def conn_task(connection):
 async def thermometer_task():
     global is_connected, bt_connection
     while True:
-        await asyncio.sleep_ms(100)
+        await asyncio.sleep_ms(1000)
         if is_connected:
             try:
                 for rom in THERMOMETER_ROMS:
