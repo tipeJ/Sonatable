@@ -54,7 +54,7 @@ MOON_BUTTON_6_PIN = Pin(7, mode=Pin.IN, pull=Pin.PULL_UP)
 MOON_BUTTON_7_PIN = Pin(8, mode=Pin.IN, pull=Pin.PULL_UP)
 
 REED_PIN = Pin(0, mode=Pin.IN, value=1, pull=Pin.PULL_UP)
-THERMOMETER_PIN = Pin(9)
+THERMOMETER_PIN = Pin(10)
 THERMOMETER_SENSOR = ds.DS18X20(onewire.OneWire(THERMOMETER_PIN))
 THERMOMETER_ROMS = THERMOMETER_SENSOR.scan()
 
@@ -281,12 +281,12 @@ async def conn_task(connection):
 async def thermometer_task():
     global is_connected, bt_connection
     while True:
-        await asyncio.sleep_ms(1000)
+        await asyncio.sleep_ms(100)
         if is_connected:
             try:
                 for rom in THERMOMETER_ROMS:
                     THERMOMETER_SENSOR.convert_temp()
-                    await asyncio.sleep_ms(750)
+                    await asyncio.sleep_ms(100)
                     temperature = THERMOMETER_SENSOR.read_temp(rom)
                     print("Temperature:", temperature)
                     # Send the temperature to the central
@@ -312,12 +312,17 @@ async def peripheral_task():
             connection.exchange_mtu(512)
             is_connected = True
             loop = asyncio.get_event_loop()
-            loop.create_task(conn_task(connection))
-            loop.create_task(thermometer_task())
-            loop.run_forever()
+            conn_t = loop.create_task(conn_task(connection))
+            therm_t = loop.create_task(thermometer_task())
             await connection.disconnected()
             print("Disconnected")
             is_connected = False
+            # Remove tasks
+            try:
+                conn_t.cancel()
+                therm_t.cancel()
+            except Exception as e:
+                print("Error cancelling tasks:", e)
 
 
 # Run both tasks.
@@ -331,7 +336,8 @@ async def main():
     button_sw_7 = DebouncedSwitch(MOON_BUTTON_7_PIN, button_clicked, 6, 150)
     reed_sw = DebouncedSwitch(REED_PIN, handle_reed_trigger, delay=200)
     asyncio.get_event_loop().create_task(neopixel_task())
-    await peripheral_task()
+    asyncio.get_event_loop().create_task(peripheral_task())
+    asyncio.get_event_loop().run_forever()
 
 
 asyncio.run(main()) 
