@@ -170,11 +170,11 @@ def button_clicked(index):
     if (current_kuunappi_mode == KUUNAPPI_MODE_CONTROLS_AND_LED): # If the mode is controls and led, no need for BT connection.
         # Buttons 1-3 are for screen buttons, 4-7 are for RGBW switching for static colors.
         if (index == 0): # Powerbutton
-            _ = handle_powerbutton_click()
+            asyncio.create_task(handle_powerbutton_click())
         elif (index == 1): # Brightness down
-            _ = create_short_pin_pulse(BRIGHT_DOWN_PIN, 100)
+            asyncio.create_task(create_short_pin_pulse(BRIGHT_DOWN_PIN, 100))
         elif (index == 2): # Brightness up
-            _ = create_short_pin_pulse(BRIGHT_UP_PIN, 100)
+            asyncio.create_task(create_short_pin_pulse(BRIGHT_UP_PIN, 100))
         elif (index == 3): # LEDS: RED
             # Increase the brightness of the red LEDs by 25
             static_board_neopixel_pattern.increase_color_for_channel(0, 25)
@@ -283,15 +283,17 @@ async def thermometer_task():
     global is_connected, bt_connection
     while True:
         await asyncio.sleep_ms(1000)
-        # if is_connected:
-        #     for rom in THERMOMETER_ROMS:
-        #         THERMOMETER_SENSOR.convert_temp()
-        #         await asyncio.sleep_ms(750)
-        #         temperature = THERMOMETER_SENSOR.read_temp(rom)
-        #         print("Temperature:", temperature)
-        #         # Send the temperature to the central
-        #         temperature_characteristic.notify(bt_connection, str(temperature))
-        #         await asyncio.sleep_ms(1000)
+        if is_connected:
+            try:
+                for rom in THERMOMETER_ROMS:
+                    THERMOMETER_SENSOR.convert_temp()
+                    await asyncio.sleep_ms(750)
+                    temperature = THERMOMETER_SENSOR.read_temp(rom)
+                    print("Temperature:", temperature)
+                    # Send the temperature to the central
+                    temperature_characteristic.notify(bt_connection, str(temperature))
+            except Exception as e:
+                print("Error handling thermometer data:", e)
 
 # Serially wait for connections. Don't advertise while a central is
 # connected.
@@ -316,6 +318,7 @@ async def peripheral_task():
             loop.run_forever()
             await connection.disconnected()
             print("Disconnected")
+            is_connected = False
 
 
 # Run both tasks.
