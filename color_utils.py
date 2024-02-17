@@ -1,4 +1,5 @@
 import math
+import time
 import random
 
 def hsi2rgbw(H, S, I):
@@ -149,3 +150,81 @@ def lerp(color1, color2, t):
         return (color1[0] + (color2[0] - color1[0]) * t, color1[1] + (color2[1] - color1[1]) * t, color1[2] + (color2[2] - color1[2]) * t, color1[3] + (color2[3] - color1[3]) * t)
     else:
         raise ValueError("Both colors must be either RGB or RGBW.")
+
+def beatsin88(beats_per_minute, lowest, highest):
+    # Convert beats per minute to beats per second
+    bps = beats_per_minute / 60.0
+
+    # Calculate the current position in the waveform
+    t = time.time() * bps * 2 * math.pi
+
+    # Map the sine wave to the desired range
+    val = math.sin(t) * 127.5 + 127.5
+
+    # Scale and constrain the result to the specified range
+    val = int((val / 255.0) * (highest - lowest) + lowest)
+
+    return val
+
+def beatsin16(beats_per_minute, lowest, highest):
+    # Convert beats per minute to beats per second
+    bps = beats_per_minute / 60.0
+
+    # Calculate the current position in the waveform
+    t = time.time() * bps * 2 * math.pi
+
+    # Map the sine wave to the desired range
+    val = math.sin(t) * 32767.5 + 32767.5
+
+    # Scale and constrain the result to the specified range
+    val = int((val / 65535.0) * (highest - lowest) + lowest)
+
+    return val
+def beatsin8(beats_per_minute, lowest, highest):
+    # Convert beats per minute to beats per second
+    bps = beats_per_minute / 60.0
+
+    # Calculate the current position in the waveform
+    t = time.time() * bps * 2 * math.pi
+
+    # Map the sine wave to the desired range
+    val = math.sin(t) * 127.5 + 127.5
+
+    # Scale and constrain the result to the specified range
+    val = int((val / 255.0) * (highest - lowest) + lowest)
+
+    return val
+
+def beat16(beats_per_minute):
+    # Convert beats per minute to beats per second
+    bps = beats_per_minute / 60.0
+
+    # Calculate the current position in the waveform
+    t = time.time() * bps
+
+    # Calculate the fractional part of the waveform
+    frac_part = t - int(t)
+
+    # Scale the fractional part to the range [0, 65535]
+    val = int(frac_part * 65535) % 65536
+
+    return val
+
+def sin16(angle):
+    # Map the sine wave to the range [0, 65535]
+    sin_val = (math.sin(angle / 65536.0 * 2 * math.pi) + 1) / 2.0
+
+    # Scale the result to the range [0, 65535]
+    val = int(sin_val * 65535) % 65536
+
+    return val
+
+def scale16(i, scale):
+    # Perform a fixed-point multiplication and scale the result
+    val = (i * scale + 32768) // 65536
+
+    return val
+
+def getAverageLightness(r, g, b):
+    # Average of R, G, and B
+    return (r + g + b) / 3
