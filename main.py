@@ -71,7 +71,7 @@ current_kuunappi_mode = KUUNAPPI_MODE_CONTROLS_AND_LED
 
 
 current_neopixel_pattern = None
-current_neopixel_identifier = None
+current_neopixel_identifier = "STATIC"
 latest_neopixel_ble_update = None
 static_board_neopixel_pattern = NeopixelSingleColorConfiguration((0, 0, 0, 0))
 led = Pin(1, Pin.OUT)
@@ -109,6 +109,7 @@ async def create_short_pin_pulse(pin, duration):
 
 def get_neopixel_config_from_json(json) -> NeopixelConfigurationInterface:
     light_class = json["mode"]
+    print("json:", json)
     if (light_class == "solid"):
         return NeopixelSingleColorConfiguration.from_json(json)
     elif (light_class == 'rainbow'):
@@ -159,6 +160,7 @@ async def neopixel_task_BLE(connection):
             new_mode = json.loads(new_mode)
         except Exception as e:
             print("BLE Error:", e)
+            print("Received invalid JSON for neopixel configuration:", new_mode)
             await asyncio.sleep_ms(1000)
             return
         current_neopixel_identifier = new_mode
